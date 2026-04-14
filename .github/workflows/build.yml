@@ -34,23 +34,17 @@ jobs:
           } >> $GITHUB_ENV
 
       - name: Decode Keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
-
+            printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore/release.jks
+ 
+      
       - name: Write keystore properties
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
         run: |
-          cat > keystore/r0s.properties <<EOF
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          storeFile=release.jks
-          storePassword=$STORE_PASSWORD
-          EOF
+          printf 'keyAlias=%s\nkeyPassword=%s\nstoreFile=release.jks\nstorePassword=%s\n' \
+          "${{ secrets.KEY_ALIAS }}" \
+          "${{ secrets.KEY_PASSWORD }}" \
+          "${{ secrets.STORE_PASSWORD }}" \
+          > keystore/r0s.properties
 
       - name: Build
         run: |
