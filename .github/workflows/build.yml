@@ -42,8 +42,8 @@ jobs:
          -keysize 2048 \
          -validity 10000 \
          -dname "CN=Ghostzuku, OU=Mintedshrimp, O=Ghostzuku, L=Unknown, S=Unknown, C=US" \
-         -storepass "${{ secrets.Bananayane }}" \
-         -keypass "${{ secrets.Pokemonet }}"
+         -storepass "Bananayane2" \
+         -keypass "Pokemonet5"
 
       - name: Write keystore properties
         run: |
