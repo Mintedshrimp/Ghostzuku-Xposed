@@ -16,11 +16,11 @@ for (name in arrayOf("r0s.properties", "debug.properties")) {
 }
 
 android {
-    namespace = "com.rosan.dhizuku.api.xposed"
+    namespace = "com.ghostzuku.xposed"  // ← was com.rosan.dhizuku.api.xposed
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 1
         targetSdk = compileSdk
 
         val versionProps = loadProperties("$rootDir/version.properties")
