@@ -1,4 +1,4 @@
-package com.rosan.xposed.hook.api
+package com.ghostzuku.xposed.hook.api
 
 import android.app.admin.DevicePolicyManager
 import android.app.admin.IDevicePolicyManager
@@ -6,17 +6,14 @@ import android.content.ComponentName
 import android.content.pm.IPackageInstaller
 import android.content.pm.IPackageInstallerSession
 import android.content.pm.PackageInstaller
-
 import com.rosan.dhizuku.api.Dhizuku
 import com.rosan.dhizuku.api.DhizukuBinderWrapper
-import com.rosan.xposed.Hook
-import com.rosan.xposed.hook.DhizukuAPI
-
+import com.ghostzuku.xposed.Hook
+import com.ghostzuku.xposed.hook.DhizukuAPI
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-
 import java.lang.reflect.Field
 
 class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
@@ -33,9 +30,8 @@ class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
 
     private fun hookIsOwner() {
         val isOwnerHook = object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam?) {
+            override fun beforeHookedMethod(param: MethodHookParam) {
                 super.beforeHookedMethod(param)
-                if (param == null) return
                 if (param.args.isEmpty()) return
                 DhizukuAPI.whenDhizukuPermissionGranted {
                     param.args[0] = DhizukuAPI.serverPackageName
@@ -58,9 +54,8 @@ class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
 
     private fun hookPackageNameGet() {
         val packageNameHook = object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam?) {
+            override fun afterHookedMethod(param: MethodHookParam) {
                 super.afterHookedMethod(param)
-                if (param == null) return
                 val result = param.result as String?
                 if (result != lpparam.packageName) return
                 var hookIt = false
@@ -96,22 +91,23 @@ class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
 
     private fun hookDeviceOwnerComponentName() {
         val devicePolicyManagerClazz = DevicePolicyManager::class.java
-        devicePolicyManagerClazz.declaredMethods.forEach {
+        devicePolicyManagerClazz.declaredMethods.forEach { method ->
             XposedBridge.hookMethod(
-                it,
+                method,
                 object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam?) {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
                         super.beforeHookedMethod(param)
-                        if (param == null) return
-                        val service = param.thisObject as DevicePolicyManager
+                        val service = param.thisObject as? DevicePolicyManager ?: return
                         DhizukuAPI.whenDhizukuPermissionGranted {
                             proxyDevicePolicyManager(service)
                             param.args.forEachIndexed { index, any ->
                                 if (any !is ComponentName) return@forEachIndexed
                                 param.args[index] = DhizukuAPI.serverComponentName
                             }
-                            if (it.name.contains("Delegated")) {
-                                param.args[1] = DhizukuAPI.serverPackageName
+                            if (method.name.contains("Delegated")) {
+                                if (param.args.size > 1) {
+                                    param.args[1] = DhizukuAPI.serverPackageName
+                                }
                             }
                         }
                     }
@@ -125,9 +121,9 @@ class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
             getClass("android.app.ApplicationPackageManager"),
             "getPackageInstaller",
             object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam?) {
+                override fun afterHookedMethod(param: MethodHookParam) {
                     super.afterHookedMethod(param)
-                    val installer = param?.result as PackageInstaller? ?: return
+                    val installer = param.result as? PackageInstaller ?: return
                     DhizukuAPI.whenDhizukuPermissionGranted {
                         proxyPackageInstaller(installer)
                     }
@@ -138,9 +134,9 @@ class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
             PackageInstaller.Session::class.java,
             IPackageInstallerSession::class.java,
             object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam?) {
+                override fun afterHookedMethod(param: MethodHookParam) {
                     super.afterHookedMethod(param)
-                    val session = param?.thisObject as PackageInstaller.Session? ?: return
+                    val session = param.thisObject as? PackageInstaller.Session ?: return
                     DhizukuAPI.whenDhizukuPermissionGranted {
                         proxyPackageInstallerSession(session)
                     }
@@ -153,12 +149,12 @@ class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
         XposedHelpers.findAndHookMethod(
             DevicePolicyManager::class.java,
             "isActivePasswordSufficient",
-            object :
-                XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam?) {
-                    param?.result = true
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    param.result = true
                 }
-            })
+            }
+        )
     }
 
     private var packageInstallerSessionField: Field? = null
@@ -177,7 +173,6 @@ class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
     }
 
     private var packageInstallerServiceField: Field? = null
-
     private var packageInstallerNameField: Field? = null
 
     private fun proxyPackageInstaller(packageInstaller: PackageInstaller) {
@@ -205,8 +200,8 @@ class AndroidM(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
     private var devicePolicyManagerServiceField: Field? = null
 
     private fun proxyDevicePolicyManager(service: DevicePolicyManager) {
-        val field =
-            devicePolicyManagerServiceField ?: service::class.java.getDeclaredField("mService")
+        val field = devicePolicyManagerServiceField 
+            ?: service::class.java.getDeclaredField("mService")
         devicePolicyManagerServiceField = field
         field.isAccessible = true
         val manager = field.get(service) as IDevicePolicyManager
