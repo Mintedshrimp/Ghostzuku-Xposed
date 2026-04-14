@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.ghostzuku.xposed">
+    
     <application
         android:description="@string/app_description"
         android:icon="@android:mipmap/sym_def_app_icon"
