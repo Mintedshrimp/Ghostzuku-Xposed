@@ -33,22 +33,10 @@ jobs:
             echo "commit=$(echo ${{ github.sha }} | cut -c-7)"
           } >> $GITHUB_ENV
 
-      - name: Generate Keystore
-        run: |
-         keytool -genkey -v \
-         -keystore keystore/release.jks \
-         -alias "Mintedshrimp" \
-         -keyalg RSA \
-         -keysize 2048 \
-         -validity 10000 \
-         -dname "CN=Ghostzuku, OU=Mintedshrimp, O=Ghostzuku, L=Unknown, S=Unknown, C=US" \
-         -storepass "Pokemone5" \
-         -keypass "Bananayane1"
-
       - name: Write keystore properties
         run: |
-         printf 'keyAlias=%s\nkeyPassword=%s\nstoreFile=release.jks\nstorePassword=%s\n' "${{ secrets.KEY_ALIAS }}" "${{ secrets.KEY_PASSWORD }}" "${{ secrets.STORE_PASSWORD }}" > keystore/r0s.properties
-     
+          printf 'keyAlias=ghostzuku\nkeyPassword=Bananayane1\nstoreFile=release.jks\nstorePassword=Bananayane1\n' > keystore/r0s.properties
+    
       - name: Build
         run: |
           ./gradlew --no-daemon --warning-mode=all assembleRelease
