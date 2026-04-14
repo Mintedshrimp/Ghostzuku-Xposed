@@ -1,17 +1,13 @@
 package com.rosan.xposed
 
-import androidx.annotation.Keep
-
-import com.rosan.xposed.hook.DhizukuAPI
-
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
-class HookInit @Keep constructor() : IXposedHookLoadPackage {
-    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam?) {
-        if (lpparam == null) return
-        if (!lpparam.isFirstApplication) return
-        if (lpparam.classLoader == null) return
-        DhizukuAPI(lpparam).start()
+class HookInit : IXposedHookLoadPackage {
+    override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
+        // Skip our own process
+        if (lpparam.packageName == "com.rosan.dhizuku.api.xposed") return
+
+        ShizukuHook(lpparam).start()
     }
 }
