@@ -37,13 +37,13 @@ jobs:
         run: |
          keytool -genkey -v \
          -keystore keystore/release.jks \
-         -alias "${{ secrets.KEY_ALIAS }}" \
+         -alias "Mintedshrimp" \
          -keyalg RSA \
          -keysize 2048 \
          -validity 10000 \
          -dname "CN=Ghostzuku, OU=Mintedshrimp, O=Ghostzuku, L=Unknown, S=Unknown, C=US" \
-         -storepass "Bananayane1" \
-         -keypass "Pokemonet5"
+         -storepass "Pokemone5" \
+         -keypass "Bananayane1"
 
       - name: Write keystore properties
         run: |
