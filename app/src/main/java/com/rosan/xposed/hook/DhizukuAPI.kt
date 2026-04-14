@@ -1,21 +1,20 @@
-package com.rosan.xposed.hook
+package com.ghostzuku.xposed.hook
 
 import android.app.Application
 import android.content.ComponentName
 import android.content.Context
-
+import android.content.pm.PackageManager
 import com.rosan.dhizuku.api.Dhizuku
 import com.rosan.dhizuku.api.DhizukuRequestPermissionListener
-import com.rosan.xposed.Hook
-import com.rosan.xposed.hook.api.AndroidM
-
+import com.ghostzuku.xposed.Hook
+import com.ghostzuku.xposed.hook.api.AndroidM
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-
 import kotlin.concurrent.thread
 
 class DhizukuAPI(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
+    
     private lateinit var context: Context
 
     companion object {
@@ -26,19 +25,40 @@ class DhizukuAPI(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
             get() = serverComponentName.packageName
 
         private var requesting = false
-        fun <T> whenDhizukuPermissionGranted(action: () -> T): T? {
-            if (Dhizuku.isPermissionGranted()) return action.invoke()
+        private val permissionCallbacks = mutableListOf<(Boolean) -> Unit>()
+
+        fun whenDhizukuPermissionGranted(action: () -> Unit) {
+            if (Dhizuku.isPermissionGranted()) {
+                action.invoke()
+                return
+            }
+            
+            // Queue the action for when permission is granted
+            permissionCallbacks.add { granted ->
+                if (granted) action.invoke()
+            }
+            
+            // Request permission if not already requesting
             if (!requesting) synchronized(this) {
                 requesting = true
                 thread {
                     Dhizuku.requestPermission(object : DhizukuRequestPermissionListener() {
                         override fun onRequestPermission(grantResult: Int) {
                             requesting = false
+                            val granted = grantResult == PackageManager.PERMISSION_GRANTED
+                            
+                            // Fire all queued callbacks
+                            val callbacks = permissionCallbacks.toList()
+                            permissionCallbacks.clear()
+                            callbacks.forEach { it.invoke(granted) }
                         }
                     })
                 }
             }
-            return null
+        }
+        
+        fun isDhizukuReady(): Boolean {
+            return runCatching { Dhizuku.isPermissionGranted() }.getOrDefault(false)
         }
     }
 
@@ -48,13 +68,17 @@ class DhizukuAPI(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
             "attach",
             Context::class.java,
             object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam?) {
+                override fun afterHookedMethod(param: MethodHookParam) {
                     super.afterHookedMethod(param)
-                    context = param?.args?.get(0) as Context
+                    context = param.args[0] as Context
+                    
                     if (!Dhizuku.init(context)) return
                     serverComponentName = Dhizuku.getOwnerComponent()
+                    
+                    // Start AndroidM hooks (Device Owner spoofing)
                     AndroidM(lpparam).start()
                 }
-            })
+            }
+        )
     }
 }
