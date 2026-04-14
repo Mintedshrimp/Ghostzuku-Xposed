@@ -1,14 +1,12 @@
 package com.ghostzuku.xposed
 
-import android.app.AndroidAppHelper
 import android.content.ComponentName
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.os.Handler
-import android.os.Looper
 import com.rosan.dhizuku.api.Dhizuku
 import com.rosan.dhizuku.api.DhizukuRequestPermissionListener
 import com.rosan.dhizuku.api.DhizukuUserServiceArgs
+import com.ghostzuku.xposed.hook.DhizukuAPI
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
@@ -18,33 +16,27 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
  *
  * Intercepts rikka.shizuku.Shizuku calls and redirects them to
  * Dhizuku (Device Owner), so apps work without Shizuku running at all.
+ * 
+ * Relies on DhizukuAPI for early initialization and permission handling.
  */
 class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
 
     companion object {
         private const val SHIZUKU_CLASS = "rikka.shizuku.Shizuku"
         private const val SHIZUKU_USER_SERVICE_ARGS = "rikka.shizuku.Shizuku\$UserServiceArgs"
-        private const val STARTUP_DELAY_MS = 3000L  // 3 seconds
     }
 
     private var shizukuClass: Class<*>? = null
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var isDhizukuReady = false
     private val pendingListeners = mutableListOf<Any>()
 
     override fun beforeHook(): Boolean {
         shizukuClass = getClass(SHIZUKU_CLASS) ?: return false
-        
-        // Schedule Dhizuku init and permission request after delay
-        mainHandler.postDelayed({
-            initializeDhizukuAndRequestPermission()
-        }, STARTUP_DELAY_MS)
-        
         return true
     }
 
     override fun hooking() {
         val clazz = shizukuClass ?: return
+        
         hookCheckSelfPermission(clazz)
         hookRequestPermission(clazz)
         hookShouldShowRationale(clazz)
@@ -53,42 +45,6 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
         hookBindUserService(clazz)
         hookUnbindUserService(clazz)
         hookAddBinderReceivedListener(clazz)
-    }
-
-    private fun initializeDhizukuAndRequestPermission() {
-        runCatching {
-            val ctx = AndroidAppHelper.currentApplication()
-            if (ctx != null) {
-                Dhizuku.init(ctx)
-                
-                if (!Dhizuku.isPermissionGranted()) {
-                    Dhizuku.requestPermission(object : DhizukuRequestPermissionListener() {
-                        override fun onRequestPermission(grantResult: Int) {
-                            if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                                isDhizukuReady = true
-                                firePendingListeners()
-                            }
-                        }
-                    })
-                } else {
-                    isDhizukuReady = true
-                    firePendingListeners()
-                }
-            }
-        }.onFailure {
-            // Log error - Dhizuku init failed
-        }
-    }
-
-    private fun firePendingListeners() {
-        pendingListeners.forEach { listener ->
-            runCatching {
-                listener.javaClass
-                    .getMethod("onBinderReceived")
-                    .invoke(listener)
-            }
-        }
-        pendingListeners.clear()
     }
 
     // ── 1. checkSelfPermission ───────────────────────────────────────────────
@@ -111,15 +67,12 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
             object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val requestCode = param.args[0] as Int
-                    runCatching {
-                        Dhizuku.requestPermission(object : DhizukuRequestPermissionListener() {
-                            override fun onRequestPermission(grantResult: Int) {
-                                firePermissionResult(clazz, requestCode, grantResult)
-                            }
-                        })
-                    }.onFailure {
-                        firePermissionResult(clazz, requestCode, PackageManager.PERMISSION_DENIED)
+                    
+                    DhizukuAPI.whenDhizukuPermissionGranted {
+                        // Permission already granted—fire callback immediately
+                        firePermissionResult(clazz, requestCode, PackageManager.PERMISSION_GRANTED)
                     }
+                    
                     param.result = null
                 }
             }
@@ -132,15 +85,16 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
             val listeners = XposedHelpers.getStaticObjectField(
                 clazz, "sRequestPermissionResultListeners"
             ) as? Collection<*> ?: return
-            for (l in listeners) {
+            
+            for (listener in listeners) {
                 runCatching {
-                    l?.javaClass
+                    listener?.javaClass
                         ?.getMethod(
                             "onRequestPermissionResult",
                             Int::class.javaPrimitiveType,
                             Int::class.javaPrimitiveType
                         )
-                        ?.invoke(l, requestCode, grantResult)
+                        ?.invoke(listener, requestCode, grantResult)
                 }
             }
         }
@@ -177,9 +131,7 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
                 clazz, "pingBinder",
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
-                        param.result = isDhizukuReady && runCatching { 
-                            Dhizuku.isPermissionGranted() 
-                        }.getOrDefault(false)
+                        param.result = DhizukuAPI.isDhizukuReady()
                     }
                 }
             )
@@ -202,12 +154,12 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
                             XposedHelpers.getObjectField(args, "componentName") as? ComponentName
                         }.getOrNull() ?: return
 
-                        val dhizukuArgs = DhizukuUserServiceArgs(component)
-
-                        runCatching {
+                        DhizukuAPI.whenDhizukuPermissionGranted {
+                            val dhizukuArgs = DhizukuUserServiceArgs(component)
                             Dhizuku.bindUserService(dhizukuArgs, conn)
-                            param.result = null
                         }
+                        
+                        param.result = null
                     }
                 }
             )
@@ -223,10 +175,10 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val conn = param.args[0] as? ServiceConnection ?: return
-                        runCatching {
+                        DhizukuAPI.whenDhizukuPermissionGranted {
                             Dhizuku.unbindUserService(conn)
-                            param.result = null
                         }
+                        param.result = null
                     }
                 }
             )
@@ -235,6 +187,7 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
 
     // ── 8. addBinderReceivedListener (Sticky & Non-Sticky) ───────────────────
     private fun hookAddBinderReceivedListener(clazz: Class<*>) {
+        // Sticky version
         runCatching {
             XposedHelpers.findAndHookMethod(
                 clazz, "addBinderReceivedListenerSticky",
@@ -243,14 +196,14 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val listener = param.args[0] ?: return
                         
-                        if (isDhizukuReady) {
-                            runCatching {
-                                listener.javaClass
-                                    .getMethod("onBinderReceived")
-                                    .invoke(listener)
-                            }
+                        if (DhizukuAPI.isDhizukuReady()) {
+                            fireBinderReceived(listener)
                         } else {
+                            // Queue for later—will be fired when permission granted
                             pendingListeners.add(listener)
+                            DhizukuAPI.whenDhizukuPermissionGranted {
+                                firePendingListeners()
+                            }
                         }
                         
                         param.result = null
@@ -259,6 +212,7 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
             )
         }
         
+        // Non-sticky version
         runCatching {
             XposedHelpers.findAndHookMethod(
                 clazz, "addBinderReceivedListener",
@@ -267,20 +221,39 @@ class ShizukuHook(lpparam: XC_LoadPackage.LoadPackageParam) : Hook(lpparam) {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val listener = param.args[0] ?: return
                         
-                        if (isDhizukuReady) {
-                            runCatching {
-                                listener.javaClass
-                                    .getMethod("onBinderReceived")
-                                    .invoke(listener)
-                            }
+                        if (DhizukuAPI.isDhizukuReady()) {
+                            fireBinderReceived(listener)
                         } else {
                             pendingListeners.add(listener)
+                            DhizukuAPI.whenDhizukuPermissionGranted {
+                                firePendingListeners()
+                            }
                         }
                         
                         param.result = null
                     }
                 }
             )
+        }
+    }
+    
+    private fun fireBinderReceived(listener: Any) {
+        runCatching {
+            listener.javaClass
+                .getMethod("onBinderReceived")
+                .invoke(listener)
+        }
+    }
+    
+    private fun firePendingListeners() {
+        val listeners = pendingListeners.toList()
+        pendingListeners.clear()
+        listeners.forEach { listener ->
+            runCatching {
+                listener.javaClass
+                    .getMethod("onBinderReceived")
+                    .invoke(listener)
+            }
         }
     }
 }
