@@ -1,4 +1,4 @@
-package com.rosan.xposed
+package com.ghostzuku.xposed
 
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
