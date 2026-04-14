@@ -20,7 +20,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 1
+        minSdk = 26
         targetSdk = compileSdk
 
         val versionProps = loadProperties("$rootDir/version.properties")
