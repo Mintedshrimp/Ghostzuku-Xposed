@@ -42,7 +42,7 @@ jobs:
          -keysize 2048 \
          -validity 10000 \
          -dname "CN=Ghostzuku, OU=Mintedshrimp, O=Ghostzuku, L=Unknown, S=Unknown, C=US" \
-         -storepass "Bananayane2" \
+         -storepass "Bananayane1" \
          -keypass "Pokemonet5"
 
       - name: Write keystore properties
